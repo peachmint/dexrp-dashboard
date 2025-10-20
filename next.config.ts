@@ -1,13 +1,17 @@
 import type { NextConfig } from "next";
 
+const isProd = process.env.NODE_ENV === 'production';
+
 const nextConfig: NextConfig = {
-  output: 'export',
-  trailingSlash: true,
+  output: isProd ? 'export' : undefined,
+  trailingSlash: isProd,
   images: {
-    unoptimized: true
+    unoptimized: isProd
   },
-  basePath: '/dexrp-dashboard',
-  assetPrefix: '/dexrp-dashboard/',
+  ...(isProd && {
+    basePath: '/dexrp-dashboard',
+    assetPrefix: '/dexrp-dashboard/',
+  }),
 };
 
 export default nextConfig;

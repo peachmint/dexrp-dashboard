@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AggregatedData, SortField, SortDirection, ViewMode, TransactionWithCode, TransactionSortField, CodeInfo } from '@/lib/types';
-import { sortData, filterData, searchTransactions, sortTransactions, isEthereumAddress, aggregateDataByCode, enrichTransactionsWithCodeNames } from '@/lib/aggregator';
+import { sortData, filterData, searchTransactions, sortTransactions, isEthereumAddress, aggregateDataByCode, enrichTransactionsWithCodeNames, findDuplicateCodes } from '@/lib/aggregator';
 import DataTable from '@/components/DataTable';
 import SearchBar from '@/components/SearchBar';
 import TransactionTable from '@/components/TransactionTable';
@@ -22,6 +22,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [stats, setStats] = useState<{ totalCodes: number; totalTransactions: number; successfulFetches: number; lastUpdated?: string; cached?: boolean } | null>(null);
+  const [duplicateCodes, setDuplicateCodes] = useState<Map<string, string[]>>(new Map());
 
   useEffect(() => {
     fetchData();
@@ -52,23 +53,42 @@ export default function Home() {
     try {
       setLoading(true);
 
-      // 캐시된 데이터에서 직접 로드
-      const codes: CodeInfo[] = codesData;
-      const transactions = cachedData.transactions;
+      // 개발 환경에서는 API 사용, 배포 환경에서는 캐시 사용
+      if (process.env.NODE_ENV === 'development') {
+        // 개발 환경: 실시간 데이터 페칭
+        const response = await fetch(`/api/data?mode=${mode || 'aggregated'}`);
+        if (!response.ok) {
+          throw new Error('API 요청 실패');
+        }
+        const result = await response.json();
 
-      // 데이터 집계
-      const aggregatedData = aggregateDataByCode(transactions, codes);
-      const transactionsWithCodeNames = enrichTransactionsWithCodeNames(transactions, codes);
+        setData(result.aggregatedData || []);
+        setTransactionData(result.transactionData || []);
+        setStats(result.stats || null);
 
-      setData(aggregatedData);
-      setTransactionData(transactionsWithCodeNames);
-      setStats({
-        totalCodes: cachedData.totalCodes,
-        totalTransactions: cachedData.totalTransactions,
-        successfulFetches: cachedData.successfulFetches,
-        lastUpdated: cachedData.lastUpdated,
-        cached: true
-      });
+        if (result.duplicateCodes) {
+          setDuplicateCodes(new Map(Object.entries(result.duplicateCodes)));
+        }
+      } else {
+        // 배포 환경: 캐시된 데이터 사용
+        const codes: CodeInfo[] = codesData;
+        const transactions = cachedData.transactions;
+
+        const aggregatedData = aggregateDataByCode(transactions, codes);
+        const transactionsWithCodeNames = enrichTransactionsWithCodeNames(transactions, codes);
+        const duplicates = findDuplicateCodes(codes);
+
+        setData(aggregatedData);
+        setTransactionData(transactionsWithCodeNames);
+        setDuplicateCodes(duplicates);
+        setStats({
+          totalCodes: cachedData.totalCodes,
+          totalTransactions: cachedData.totalTransactions,
+          successfulFetches: cachedData.successfulFetches,
+          lastUpdated: cachedData.lastUpdated,
+          cached: true
+        });
+      }
     } catch (err) {
       setError('데이터를 불러오는데 실패했습니다.');
     } finally {
@@ -158,6 +178,24 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {duplicateCodes.size > 0 && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <h3 className="text-lg font-semibold text-yellow-800 mb-3">⚠️ 중복 코드 발견</h3>
+            <div className="space-y-2">
+              {Array.from(duplicateCodes.entries()).map(([code, names]) => (
+                <div key={code} className="text-sm">
+                  <span className="font-mono bg-gray-100 px-2 py-1 rounded text-gray-700">{code}</span>
+                  <span className="text-gray-600 ml-2">→</span>
+                  <span className="ml-2 text-gray-800">{names.join(', ')}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-yellow-700 mt-2">
+              * 같은 코드를 사용하는 항목들은 거래 데이터가 마지막 항목에만 표시됩니다.
+            </p>
+          </div>
+        )}
 
         <div className="mb-6 flex gap-4 items-center">
           <SearchBar

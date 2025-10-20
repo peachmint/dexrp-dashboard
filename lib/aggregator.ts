@@ -86,6 +86,28 @@ export function isEthereumAddress(str: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(str);
 }
 
+// 중복 코드 찾기
+export function findDuplicateCodes(codes: CodeInfo[]): Map<string, string[]> {
+  const codeToNames = new Map<string, string[]>();
+
+  codes.forEach(codeInfo => {
+    if (!codeToNames.has(codeInfo.code)) {
+      codeToNames.set(codeInfo.code, []);
+    }
+    codeToNames.get(codeInfo.code)!.push(codeInfo.name);
+  });
+
+  // 중복된 코드만 반환
+  const duplicates = new Map<string, string[]>();
+  codeToNames.forEach((names, code) => {
+    if (names.length > 1) {
+      duplicates.set(code, names);
+    }
+  });
+
+  return duplicates;
+}
+
 // 거래 데이터에 코드명 추가
 export function enrichTransactionsWithCodeNames(
   transactions: Transaction[],
