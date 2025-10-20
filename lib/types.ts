@@ -28,3 +28,11 @@ export interface AggregatedData {
 
 export type SortField = 'name' | 'totalAmount' | 'purchaserCount';
 export type SortDirection = 'asc' | 'desc';
+
+export type ViewMode = 'aggregated' | 'detailed';
+
+export type TransactionSortField = 'purchaser' | 'usdAmount' | 'blockTimestamp' | 'referral';
+
+export interface TransactionWithCode extends Transaction {
+  codeName: string;
+}

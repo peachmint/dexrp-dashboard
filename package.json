@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "fetch-data": "node scripts/fetch-data.js",
+    "refresh-cache": "npm run fetch-data"
   },
   "dependencies": {
     "next": "15.5.6",

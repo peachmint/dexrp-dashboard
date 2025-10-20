@@ -1,7 +1,19 @@
 import { Transaction } from './types';
 
-export async function fetchTransactionData(code: string): Promise<Transaction[]> {
-  const response = await fetch(`https://backend.dexrp.io/vending/handover?code=${code}`);
+export async function fetchTransactionData(
+  code: string,
+  signal?: AbortSignal
+): Promise<Transaction[]> {
+  const response = await fetch(
+    `https://backend.dexrp.io/vending/handover?code=${code}`,
+    {
+      signal,
+      headers: {
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache'
+      }
+    }
+  );
 
   if (!response.ok) {
     throw new Error(`API 요청 실패: ${response.status}`);

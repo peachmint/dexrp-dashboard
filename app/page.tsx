@@ -1,42 +1,73 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { AggregatedData, SortField, SortDirection } from '@/lib/types';
-import { sortData, filterData } from '@/lib/aggregator';
+import { AggregatedData, SortField, SortDirection, ViewMode, TransactionWithCode, TransactionSortField } from '@/lib/types';
+import { sortData, filterData, searchTransactions, sortTransactions, isEthereumAddress } from '@/lib/aggregator';
 import DataTable from '@/components/DataTable';
 import SearchBar from '@/components/SearchBar';
+import TransactionTable from '@/components/TransactionTable';
 
 export default function Home() {
+  const [viewMode, setViewMode] = useState<ViewMode>('aggregated');
   const [data, setData] = useState<AggregatedData[]>([]);
+  const [transactionData, setTransactionData] = useState<TransactionWithCode[]>([]);
   const [filteredData, setFilteredData] = useState<AggregatedData[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<TransactionWithCode[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('totalAmount');
+  const [transactionSortField, setTransactionSortField] = useState<TransactionSortField>('blockTimestamp');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [stats, setStats] = useState<{ totalCodes: number; totalTransactions: number } | null>(null);
+  const [stats, setStats] = useState<{ totalCodes: number; totalTransactions: number; successfulFetches: number; lastUpdated?: string; cached?: boolean } | null>(null);
 
   useEffect(() => {
     fetchData();
   }, []);
 
   useEffect(() => {
-    let result = filterData(data, searchTerm);
-    result = sortData(result, sortField, sortDirection);
-    setFilteredData(result);
-  }, [data, searchTerm, sortField, sortDirection]);
+    // 이더리움 주소 검색 시 자동으로 상세 모드로 전환
+    if (searchTerm.trim() && isEthereumAddress(searchTerm)) {
+      if (viewMode === 'aggregated') {
+        setViewMode('detailed');
+      }
+    }
+  }, [searchTerm]);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    if (viewMode === 'aggregated') {
+      let result = filterData(data, searchTerm);
+      result = sortData(result, sortField, sortDirection);
+      setFilteredData(result);
+    } else {
+      let result = searchTransactions(transactionData, searchTerm);
+      result = sortTransactions(result, transactionSortField, sortDirection);
+      setFilteredTransactions(result);
+    }
+  }, [data, transactionData, searchTerm, sortField, transactionSortField, sortDirection, viewMode]);
+
+  const fetchData = async (mode?: ViewMode) => {
     try {
       setLoading(true);
-      const response = await fetch('/api/data');
-      const result = await response.json();
 
-      if (result.success) {
-        setData(result.data);
+      // 집계된 데이터와 상세 데이터를 병렬로 가져오기
+      const [aggregatedResponse, detailedResponse] = await Promise.all([
+        fetch('/api/data?mode=aggregated'),
+        fetch('/api/data?mode=detailed')
+      ]);
+
+      const aggregatedResult = await aggregatedResponse.json();
+      const detailedResult = await detailedResponse.json();
+
+      if (aggregatedResult.success && detailedResult.success) {
+        setData(aggregatedResult.data);
+        setTransactionData(detailedResult.data);
         setStats({
-          totalCodes: result.totalCodes,
-          totalTransactions: result.totalTransactions
+          totalCodes: aggregatedResult.totalCodes,
+          totalTransactions: aggregatedResult.totalTransactions,
+          successfulFetches: aggregatedResult.successfulFetches,
+          lastUpdated: aggregatedResult.lastUpdated,
+          cached: aggregatedResult.cached
         });
       } else {
         setError('데이터를 가져오는데 실패했습니다.');
@@ -53,6 +84,15 @@ export default function Home() {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const handleTransactionSort = (field: TransactionSortField) => {
+    if (transactionSortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setTransactionSortField(field);
       setSortDirection('desc');
     }
   };
@@ -78,7 +118,7 @@ export default function Home() {
         <div className="text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
           >
             다시 시도
@@ -92,32 +132,82 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            DexRP 대시보드
-          </h1>
-          <p className="text-gray-600">
-            추천 코드별 거래 통계를 확인하세요
-          </p>
+          <div className="mb-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                DexRP 대시보드
+              </h1>
+              <p className="text-gray-600">
+                추천 코드별 거래 통계를 확인하세요
+              </p>
+            </div>
+          </div>
+
           {stats && (
-            <div className="mt-4 flex gap-6 text-sm text-gray-500">
-              <span>총 코드 수: {stats.totalCodes}개</span>
-              <span>총 거래 수: {stats.totalTransactions}건</span>
-              <span>표시 중: {filteredData.length}개</span>
+            <div className="space-y-2">
+              <div className="flex gap-6 text-sm text-gray-500">
+                <span>총 코드 수: {stats.totalCodes}개</span>
+                <span>성공한 요청: {stats.successfulFetches}개</span>
+                <span>총 거래 수: {stats.totalTransactions}건</span>
+                <span>표시 중: {viewMode === 'aggregated' ? filteredData.length : filteredTransactions.length}개</span>
+              </div>
+              {stats.cached && stats.lastUpdated && (
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <span>💾 캐시된 데이터</span>
+                  <span>•</span>
+                  <span>마지막 업데이트: {new Date(stats.lastUpdated).toLocaleString('ko-KR')}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <SearchBar
-          searchTerm={searchTerm}
-          onSearchChange={handleSearchChange}
-        />
+        <div className="mb-6 flex gap-4 items-center">
+          <SearchBar
+            searchTerm={searchTerm}
+            onSearchChange={handleSearchChange}
+          />
 
-        <DataTable
-          data={filteredData}
-          sortField={sortField}
-          sortDirection={sortDirection}
-          onSort={handleSort}
-        />
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('aggregated')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'aggregated'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              집계 보기
+            </button>
+            <button
+              onClick={() => setViewMode('detailed')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'detailed'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              상세 보기
+            </button>
+          </div>
+        </div>
+
+        {viewMode === 'aggregated' ? (
+          <DataTable
+            data={filteredData}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+            transactionData={transactionData}
+          />
+        ) : (
+          <TransactionTable
+            data={filteredTransactions}
+            sortField={transactionSortField}
+            sortDirection={sortDirection}
+            onSort={handleTransactionSort}
+          />
+        )}
       </div>
     </div>
   );
