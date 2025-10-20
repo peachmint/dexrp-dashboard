@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { AggregatedData, SortField, SortDirection, ViewMode, TransactionWithCode, TransactionSortField } from '@/lib/types';
-import { sortData, filterData, searchTransactions, sortTransactions, isEthereumAddress } from '@/lib/aggregator';
+import { AggregatedData, SortField, SortDirection, ViewMode, TransactionWithCode, TransactionSortField, CodeInfo } from '@/lib/types';
+import { sortData, filterData, searchTransactions, sortTransactions, isEthereumAddress, aggregateDataByCode, enrichTransactionsWithCodeNames } from '@/lib/aggregator';
 import DataTable from '@/components/DataTable';
 import SearchBar from '@/components/SearchBar';
 import TransactionTable from '@/components/TransactionTable';
+import cachedData from '@/data/cached-transactions.json';
+import codesData from '@/data/codes.json';
 
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>('aggregated');
@@ -50,30 +52,25 @@ export default function Home() {
     try {
       setLoading(true);
 
-      // 집계된 데이터와 상세 데이터를 병렬로 가져오기
-      const [aggregatedResponse, detailedResponse] = await Promise.all([
-        fetch('/api/data?mode=aggregated'),
-        fetch('/api/data?mode=detailed')
-      ]);
+      // 캐시된 데이터에서 직접 로드
+      const codes: CodeInfo[] = codesData;
+      const transactions = cachedData.transactions;
 
-      const aggregatedResult = await aggregatedResponse.json();
-      const detailedResult = await detailedResponse.json();
+      // 데이터 집계
+      const aggregatedData = aggregateDataByCode(transactions, codes);
+      const transactionsWithCodeNames = enrichTransactionsWithCodeNames(transactions, codes);
 
-      if (aggregatedResult.success && detailedResult.success) {
-        setData(aggregatedResult.data);
-        setTransactionData(detailedResult.data);
-        setStats({
-          totalCodes: aggregatedResult.totalCodes,
-          totalTransactions: aggregatedResult.totalTransactions,
-          successfulFetches: aggregatedResult.successfulFetches,
-          lastUpdated: aggregatedResult.lastUpdated,
-          cached: aggregatedResult.cached
-        });
-      } else {
-        setError('데이터를 가져오는데 실패했습니다.');
-      }
+      setData(aggregatedData);
+      setTransactionData(transactionsWithCodeNames);
+      setStats({
+        totalCodes: cachedData.totalCodes,
+        totalTransactions: cachedData.totalTransactions,
+        successfulFetches: cachedData.successfulFetches,
+        lastUpdated: cachedData.lastUpdated,
+        cached: true
+      });
     } catch (err) {
-      setError('네트워크 오류가 발생했습니다.');
+      setError('데이터를 불러오는데 실패했습니다.');
     } finally {
       setLoading(false);
     }
