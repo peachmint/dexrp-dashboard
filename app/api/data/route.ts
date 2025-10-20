@@ -3,10 +3,10 @@ import { aggregateDataByCode, enrichTransactionsWithCodeNames, findDuplicateCode
 import cachedData from '@/data/cached-transactions.json';
 import codesData from '@/data/codes.json';
 
-export async function GET(request: Request) {
+export const dynamic = 'force-static';
+
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const mode = searchParams.get('mode') || 'aggregated';
 
     const codes = codesData;
     const transactions = cachedData.transactions;
